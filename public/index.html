@@ -1,0 +1,60 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pick &amp; Reveal</title>
+<style>
+:root{--bg:#fff7ec;--card:#fff;--ink:#2b2140;--mut:#7a6f8f;--p:#7c4dff;--p2:#ff5fa2;--ok:#16a34a;--bd:#eadfce}
+@media(prefers-color-scheme:dark){:root{--bg:#1b1530;--card:#271f42;--ink:#f6f0ff;--mut:#b2a7cc;--bd:#3b3160}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 "Baloo 2","Trebuchet MS",system-ui,sans-serif;min-height:100vh}
+main{max-width:980px;margin:auto;padding:16px}
+h1{font-size:2rem;margin:.2em 0;background:linear-gradient(90deg,var(--p),var(--p2));-webkit-background-clip:text;background-clip:text;color:transparent;text-align:center}
+.sub{text-align:center;color:var(--mut);margin-bottom:16px}
+.card{background:var(--card);border:2px solid var(--bd);border-radius:22px;padding:18px;margin:14px auto;max-width:560px;box-shadow:0 6px 0 var(--bd)}
+label{display:block;font-weight:700;margin:10px 0 4px}
+input,textarea,select{width:100%;padding:12px;border-radius:14px;border:2px solid var(--bd);background:var(--bg);color:var(--ink);font:inherit}textarea{min-height:120px}
+button{font:inherit;font-weight:800;border:0;border-radius:999px;padding:12px 22px;color:#fff;background:linear-gradient(90deg,var(--p),var(--p2));cursor:pointer;box-shadow:0 4px 0 rgba(0,0,0,.2)}
+button:active{transform:translateY(3px);box-shadow:none}button.g{background:var(--card);color:var(--ink);border:2px solid var(--bd);box-shadow:none}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:center}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:10px;margin-top:14px}
+.pane{aspect-ratio:1;border-radius:18px;border:3px solid var(--card);display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.9rem;cursor:pointer;background:var(--card);box-shadow:0 5px 0 var(--bd);transition:transform .15s;position:relative;overflow:hidden}
+.pane:hover{transform:translateY(-4px) rotate(-2deg)}.pane small{font-size:.7rem;color:var(--mut);font-weight:700}
+.pane.taken{opacity:.35;pointer-events:none;filter:grayscale(1)}.pane.taken::after{content:"taken";position:absolute;bottom:2px;font-size:.65rem;font-weight:800}
+.modal{position:fixed;inset:0;background:rgba(20,10,40,.7);display:flex;align-items:center;justify-content:center;padding:20px;z-index:9}
+.reveal{text-align:center;animation:pop .6s cubic-bezier(.2,1.6,.4,1)}.reveal .big{font-size:4rem}.reveal h2{font-size:2rem;margin:.2em 0}
+@keyframes pop{from{transform:scale(.2) rotate(-20deg);opacity:0}to{transform:none;opacity:1}}
+table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{padding:6px;border-bottom:1px solid var(--bd);text-align:left}
+.tabs{display:flex;gap:8px;justify-content:center;margin:8px 0;flex-wrap:wrap}.err{color:#e11d48;font-weight:700;min-height:1.2em}
+</style></head><body><main><h1 id="ttl">🎁 Pick &amp; Reveal</h1><div class="sub" id="sub"></div><div id="app"></div></main><div id="modal"></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const PRE={colors:{ic:'🎨',n:'Colors'},pets:{ic:'🐾',n:'Pets',e:['🐶','🐱','🐰','🐹','🦊','🐼','🐨','🐸','🐵','🦁','🐯','🐮','🐷','🐢','🦄','🐙','🦉','🐧','🐠','🦋']},signs:{ic:'♈',n:'Zodiac signs',e:['♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓']},custom:{ic:'⭐',n:'Custom (numbers)',e:['⭐','🎈','🍀','🎲','🍭','🚀','🌈','🎵']}};
+let cfg={},me=JSON.parse(sessionStorage.getItem('me')||'null'),isAdmin=location.hash==='#admin',pw=sessionStorage.getItem('pw')||'',view='results',adm=null,busy=0;
+const api=async(p,o={})=>{const r=await fetch('/api/'+p,{...o,headers:{'content-type':'application/json','x-admin':pw}});const d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.error||'Error'),{status:r.status});return d};
+function face(i){const t=cfg.theme;if(t==='colors'){const h=Math.round(i*137.5)%360;return{bg:`hsl(${h} 85% ${55+(i%3)*8}%)`,t:i+1}}const e=(PRE[t]||PRE.custom).e;return{bg:'',t:e[i%e.length],n:i+1}}
+const paneHTML=i=>{const f=face(i);return `<div class="pane ${(cfg.taken||[]).includes(i)?'taken':''}" data-i="${i}" style="${f.bg?'background:'+f.bg+';color:#fff':''}">${f.t}${f.n?`<small>#${f.n}</small>`:''}</div>`};
+function setupHTML(){const c=adm&&adm.cfg||{};return `<div class="card"><label>Game title</label><input id="s_t" value="${esc(c.title||'')}" placeholder="Secret Santa 2026 🎅"><label>Pane style</label><select id="s_th">${Object.entries(PRE).map(([k,v])=>`<option value="${k}" ${c.theme===k?'selected':''}>${v.ic} ${v.n}</option>`).join('')}</select><label>Hidden names (one per line, max 200)</label><textarea id="s_it">${esc((c.items||[]).join('\n'))}</textarea><div class="err" id="er"></div><div class="row"><button class="g" id="shuf">🔀 Shuffle</button>${c.items?'<button class="g" id="savet">✏️ Update title only</button>':''}<button id="save">Save &amp; reset game 🚀</button></div><p class="sub">Full save resets all picks. Panes = number of lines.</p></div>`}
+function resultsHTML(){const r=(adm.picks||[]).sort((a,b)=>a.at-b.at),it=adm.cfg?adm.cfg.items:[];return `<div class="card" style="max-width:100%"><div class="row" style="justify-content:space-between"><b>${r.length} picked</b><button id="csv">⬇️ Download CSV</button></div><table><tr><th>Participant</th><th>Email</th><th>Pane</th><th>Revealed</th></tr>${r.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.email)}</td><td>#${p.pane+1}</td><td><b>${esc(it[p.pane])}</b></td></tr>`).join('')||'<tr><td colspan=4>Nobody yet 👀</td></tr>'}</table></div>`}
+function render(){
+ if(isAdmin){$('#ttl').textContent='🛠️ Admin';if(!adm){$('#sub').textContent='';$('#app').innerHTML=`<div class="card"><label>Admin password</label><input id="pw" type="password"><div class="err" id="er"></div><div class="row"><button id="login">Enter</button></div></div>`;return}
+  $('#sub').textContent=adm.cfg?adm.cfg.title:'Set up your game';$('#app').innerHTML=`<div class="tabs"><button class="${view==='results'?'':'g'}" data-v="results">📋 Results</button><button class="${view==='setup'?'':'g'}" data-v="setup">⚙️ Setup</button></div>`+(view==='setup'||!adm.cfg?setupHTML():resultsHTML());return}
+ $('#ttl').textContent=cfg.title||'🎁 Pick & Reveal';
+ if(!cfg.title){$('#sub').textContent='The host is still setting things up…';$('#app').innerHTML='<div class="card" style="text-align:center;font-size:3rem">⏳</div>';return}
+ $('#sub').textContent=`${cfg.count-cfg.taken.length} of ${cfg.count} panes left`;
+ $('#app').innerHTML=me?`<div class="sub">Hi <b>${esc(me.name)}</b>! Tap a pane to pick it 👇</div><div class="grid">${Array.from({length:cfg.count},(_,i)=>paneHTML(i)).join('')}</div>`:`<div class="card"><label>Your name</label><input id="nm" maxlength="60" placeholder="e.g. Ada Obi"><label>Your email</label><input id="em" type="email" placeholder="you@email.com"><div class="err" id="er"></div><div class="row"><button id="go">Let’s play 🎉</button></div></div>`}
+async function poll(){if(isAdmin||document.querySelector('#modal .modal'))return;try{cfg=await api('state');if(!document.activeElement||document.activeElement===document.body)render()}catch{}}
+async function loadAdmin(){adm=await api('admin/results');sessionStorage.setItem('pw',pw);render()}
+document.addEventListener('click',async e=>{const t=e.target.closest('[data-i],[data-v],button');if(!t)return;const er=m=>{const x=$('#er');if(x)x.textContent=m};
+ try{
+ if(t.dataset.i!==undefined){const i=+t.dataset.i;if(busy||!confirm('Pick pane #'+(i+1)+'? You only get one pick!'))return;busy=1;
+  try{const r=await api('pick',{method:'POST',body:JSON.stringify({...me,pane:i})});cfg.taken.push(i);$('#modal').innerHTML=`<div class="modal"><div class="card reveal"><div class="big">🎊</div><div>${esc(me.name)}, you got…</div><h2>${esc(r.reveal)}</h2><p class="sub">${r.emailed?`📧 We also sent this to ${esc(me.email)}`:`📸 Take a screenshot to keep it!`}</p><button id="ok">Yay! 🥳</button></div></div>`}catch(x){alert(x.message);cfg=await api('state')}finally{busy=0;render()}return}
+ if(t.dataset.v){view=t.dataset.v;return render()}
+ if(t.id==='ok'){$('#modal').innerHTML='';render()}
+ if(t.id==='login'){pw=$('#pw').value;try{await loadAdmin()}catch{er('Wrong password');pw=''}}
+ if(t.id==='go'){const name=$('#nm').value.trim(),email=$('#em').value.trim();if(!name||!/^\S+@\S+\.\S+$/.test(email))return er('Please enter your name and a valid email 🙂');me={name,email};sessionStorage.setItem('me',JSON.stringify(me));render()}
+ if(t.id==='shuf'){const a=$('#s_it').value.split('\n').map(s=>s.trim()).filter(Boolean);for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]]}$('#s_it').value=a.join('\n')}
+ if(t.id==='savet'){await api('admin/title',{method:'POST',body:JSON.stringify({title:$('#s_t').value})});view='results';await loadAdmin()}
+ if(t.id==='save'){const items=$('#s_it').value.split('\n').map(s=>s.trim()).filter(Boolean);if(!items.length||items.length>200)return er('Add between 1 and 200 names.');if(!confirm('Save and reset all picks?'))return;
+  await api('admin/setup',{method:'POST',body:JSON.stringify({title:$('#s_t').value,theme:$('#s_th').value,items})});view='results';await loadAdmin()}
+ if(t.id==='csv'){const rows=[['Participant','Email','Pane','Revealed']].concat(adm.picks.map(p=>[p.name,p.email,p.pane+1,adm.cfg.items[p.pane]]));const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='results.csv';a.click()}
+ }catch(x){er(x.message)}});
+addEventListener('hashchange',()=>location.reload());
+(async()=>{if(isAdmin&&pw)try{await loadAdmin()}catch{pw=''}
+ if(!isAdmin)cfg=await api('state').catch(()=>({}));render();setInterval(()=>{poll();if(isAdmin&&adm&&view==='results')loadAdmin().catch(()=>{})},5000)})();
+</script></body></html>
